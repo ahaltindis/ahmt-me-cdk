@@ -6,12 +6,12 @@ import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 
-
 export class AhmtMeCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     const sourceBucket = new s3.Bucket(this, 'SourceBucket');
+    new cdk.CfnOutput(this, 'SiteBucketName', { value: sourceBucket.bucketName });
 
     const ahmtMeCertificateArn = ssm.StringParameter.valueForStringParameter(this, '/ahmtme/certificate/arn');
     const ahmtMeCertificate = acm.Certificate.fromCertificateArn(this, 'AhmtMeCertificate', ahmtMeCertificateArn);
@@ -23,7 +23,7 @@ export class AhmtMeCdkStack extends cdk.Stack {
       })
     });
 
-    new cloudfront.Distribution(this, 'SourceCDN', {
+    const distribution = new cloudfront.Distribution(this, 'SourceCDN', {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       certificate: ahmtMeCertificate,
       domainNames: [
@@ -50,6 +50,7 @@ export class AhmtMeCdkStack extends cdk.Stack {
         }
       ]
     });
+    new cdk.CfnOutput(this, 'SiteDistributionId', { value: distribution.distributionId });
 
   }
 }
