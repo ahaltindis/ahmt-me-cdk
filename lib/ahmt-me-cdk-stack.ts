@@ -5,6 +5,7 @@ import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 export class AhmtMeCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -51,6 +52,44 @@ export class AhmtMeCdkStack extends cdk.Stack {
       ]
     });
     new cdk.CfnOutput(this, 'SiteDistributionId', { value: distribution.distributionId });
+
+    this.createHugoDeployUserRole(sourceBucket, distribution);
+  }
+
+  private createHugoDeployUserRole(sourceBucket: s3.Bucket, distribution: cloudfront.Distribution) {
+    // The user that will create credentials
+    const hugoDeployUser = new iam.User(this, 'HugoDeployUser');
+
+    // Role that will be assumed by user
+    const hugoDeployRole = new iam.Role(this, 'HugoDeployRole', {
+      // Session tags needed by https://github.com/marketplace/actions/configure-aws-credentials-action-for-github-actions
+      assumedBy: new iam.ArnPrincipal(hugoDeployUser.userArn).withSessionTags()
+    });
+
+    // Bucket read/write
+    sourceBucket.grantReadWrite(hugoDeployRole);
+
+    // Cloudfront cache invalidation
+    hugoDeployRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'cloudfront:CreateInvalidation',
+      ],
+      resources: [this.formatArn({
+        arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        service: 'cloudfront',
+        resource: 'distribution',
+        resourceName: distribution.distributionId,
+        region: '' // cloudfront has no region!
+      })],
+    }));
+
+    // Cloudformation read export values (i.e. bucket name, distribution id)
+    hugoDeployRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'cloudformation:DescribeStacks',
+      ],
+      resources: [this.stackId],
+    }));
 
   }
 }
