@@ -7,6 +7,12 @@ Set below env variables before running any `cdk` command.
 CDK_AHMT_ME_DEPLOY_ACCOUNT
 CDK_AHMT_ME_DEPLOY_REGION
 ```
+
+if running for dev:
+```
+IS_DEV=1 cdk deploy
+```
+
 ## Useful commands
 
 * `npm install`     install dependencies

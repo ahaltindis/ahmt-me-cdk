@@ -8,14 +8,17 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as iam from 'aws-cdk-lib/aws-iam';
 
 export class AhmtMeCdkStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps, isDev?: boolean) {
     super(scope, id, props);
 
     const sourceBucket = new s3.Bucket(this, 'SourceBucket');
     new cdk.CfnOutput(this, 'SiteBucketName', { value: sourceBucket.bucketName });
 
-    const ahmtMeCertificateArn = ssm.StringParameter.valueForStringParameter(this, '/ahmtme/certificate/arn');
-    const ahmtMeCertificate = acm.Certificate.fromCertificateArn(this, 'AhmtMeCertificate', ahmtMeCertificateArn);
+    let ahmtMeCertificate;
+    if (!isDev) {
+      const ahmtMeCertificateArn = ssm.StringParameter.valueForStringParameter(this, '/ahmtme/certificate/arn');
+      ahmtMeCertificate = acm.Certificate.fromCertificateArn(this, 'AhmtMeCertificate', ahmtMeCertificateArn);
+    }
 
     // https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_cloudfront-readme.html#cloudfront-function
     const urlRewriteAppendIndexFunction = new cloudfront.Function(this, 'UrlRewriteAppendIndexFunction', {
@@ -27,11 +30,11 @@ export class AhmtMeCdkStack extends cdk.Stack {
     const distribution = new cloudfront.Distribution(this, 'SourceCDN', {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       certificate: ahmtMeCertificate,
-      domainNames: [
+      domainNames: ahmtMeCertificate ? [
         'ahmt.me',
         'www.ahmt.me',
         'ahmet.altindis.org'
-      ],
+      ] : [],
       defaultBehavior: {
         origin: new origins.S3Origin(sourceBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
