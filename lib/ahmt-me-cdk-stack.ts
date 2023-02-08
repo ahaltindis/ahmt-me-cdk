@@ -20,6 +20,12 @@ export class AhmtMeCdkStack extends cdk.Stack {
       ahmtMeCertificate = acm.Certificate.fromCertificateArn(this, 'AhmtMeCertificate', ahmtMeCertificateArn);
     }
 
+    const urlRedirectHomeFunction = new cloudfront.Function(this, 'UrlRedirectHomeFunction', {
+      code: cloudfront.FunctionCode.fromFile({
+        filePath: "./cloud-functions/redirect_home.js"
+      })
+    });
+
     // https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_cloudfront-readme.html#cloudfront-function
     const urlRewriteAppendIndexFunction = new cloudfront.Function(this, 'UrlRewriteAppendIndexFunction', {
       code: cloudfront.FunctionCode.fromFile({
@@ -40,7 +46,7 @@ export class AhmtMeCdkStack extends cdk.Stack {
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         functionAssociations: [
           {
-            function: urlRewriteAppendIndexFunction,
+            function: urlRedirectHomeFunction,
             eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
           },
         ],
@@ -55,6 +61,60 @@ export class AhmtMeCdkStack extends cdk.Stack {
       ]
     });
     new cdk.CfnOutput(this, 'SiteDistributionId', { value: distribution.distributionId });
+
+    const distributionTr = new cloudfront.Distribution(this, 'SourceCDNTr', {
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      certificate: ahmtMeCertificate,
+      domainNames: ahmtMeCertificate ? [
+        'tr.ahmt.me',
+      ] : [],
+      defaultBehavior: {
+        origin: new origins.S3Origin(sourceBucket, {originPath: '/tr'}),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: [
+          {
+            function: urlRewriteAppendIndexFunction,
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          },
+        ],
+      },
+      defaultRootObject: 'index.html',
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 404,
+          responsePagePath: '/404/index.html'
+        }
+      ]
+    });
+    new cdk.CfnOutput(this, 'SiteDistributionIdTr', { value: distributionTr.distributionId });
+
+    const distributionEn = new cloudfront.Distribution(this, 'SourceCDNEn', {
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      certificate: ahmtMeCertificate,
+      domainNames: ahmtMeCertificate ? [
+        'en.ahmt.me',
+      ] : [],
+      defaultBehavior: {
+        origin: new origins.S3Origin(sourceBucket, {originPath: '/en'}),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: [
+          {
+            function: urlRewriteAppendIndexFunction,
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          },
+        ],
+      },
+      defaultRootObject: 'index.html',
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 404,
+          responsePagePath: '/404.html'
+        }
+      ]
+    });
+    new cdk.CfnOutput(this, 'SiteDistributionIdEn', { value: distributionEn.distributionId });
 
     this.createHugoDeployUserRole(sourceBucket, distribution);
   }
