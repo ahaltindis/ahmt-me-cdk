@@ -28,9 +28,10 @@ export class AhmtMeCdkStack extends cdk.Stack {
       ahmtMeCertificate = Certificate.fromCertificateArn(this, 'AhmtMeCertificate', ahmtMeCertificateArn);
     }
 
-    const contentServing = this.createContentServing(ahmtMeCertificate)
-
+    const contentServing = this.createContentServing(ahmtMeCertificate);
     this.createHugoDeployUserRole(contentServing);
+
+    this.createCDNServing(ahmtMeCertificate);
   }
 
   private createContentServing(certificate?: ICertificate): ContentServing {
@@ -58,6 +59,14 @@ export class AhmtMeCdkStack extends cdk.Stack {
         distributionEn
       ]
     }
+  }
+
+  private createCDNServing(certificate?: ICertificate) {
+    const cdnBucket = new Bucket(this, 'CDNBucket');
+    new cdk.CfnOutput(this, 'CDNBucketName', { value: cdnBucket.bucketName });
+
+    const cdnDomains = certificate ? ["cdn.ahmt.me"] : [];
+    createS3Distribution(this, 'CDN', cdnBucket, '/', certificate, cdnDomains);
   }
 
   private createHugoDeployUserRole(contentServing: ContentServing) {
