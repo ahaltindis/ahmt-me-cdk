@@ -8,7 +8,7 @@ import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 
 import { CFFunctions, createS3Distribution, initCFFunctions } from './cloudfront';
 
-type ContentServing = {
+type CFServing = {
   bucket: Bucket
   distributions: Distribution[]
 }
@@ -31,10 +31,11 @@ export class AhmtMeCdkStack extends cdk.Stack {
     const contentServing = this.createContentServing(ahmtMeCertificate);
     this.createHugoDeployUserRole(contentServing);
 
-    this.createCDNServing(ahmtMeCertificate);
+    const cdnServing = this.createCDNServing(ahmtMeCertificate);
+    this.createAdminUser(cdnServing)
   }
 
-  private createContentServing(certificate?: ICertificate): ContentServing {
+  private createContentServing(certificate?: ICertificate): CFServing {
     const sourceBucket = new Bucket(this, 'SourceBucket');
     new cdk.CfnOutput(this, 'SiteBucketName', { value: sourceBucket.bucketName });
 
@@ -61,15 +62,20 @@ export class AhmtMeCdkStack extends cdk.Stack {
     }
   }
 
-  private createCDNServing(certificate?: ICertificate) {
+  private createCDNServing(certificate?: ICertificate): CFServing {
     const cdnBucket = new Bucket(this, 'CDNBucket');
     new cdk.CfnOutput(this, 'CDNBucketName', { value: cdnBucket.bucketName });
 
     const cdnDomains = certificate ? ["cdn.ahmt.me"] : [];
-    createS3Distribution(this, 'CDN', cdnBucket, '/', certificate, cdnDomains);
+    const distribution = createS3Distribution(this, 'CDN', cdnBucket, '/', certificate, cdnDomains);
+
+    return {
+      bucket: cdnBucket,
+      distributions: [distribution]
+    }
   }
 
-  private createHugoDeployUserRole(contentServing: ContentServing) {
+  private createHugoDeployUserRole(contentServing: CFServing) {
     // The user that will create credentials
     const hugoDeployUser = new User(this, 'HugoDeployUser');
 
@@ -100,6 +106,37 @@ export class AhmtMeCdkStack extends cdk.Stack {
 
     // Cloudformation read export values (i.e. bucket name, distribution id)
     hugoDeployRole.addToPolicy(new PolicyStatement({
+      actions: [
+        'cloudformation:DescribeStacks',
+      ],
+      resources: [this.stackId],
+    }));
+  }
+
+  private createAdminUser(cdnServing: CFServing) {
+    const adminUser = new User(this, 'AdminUser');
+
+    // Bucket read/write
+    cdnServing.bucket.grantReadWrite(adminUser);
+
+    // Cloudfront cache invalidation
+    cdnServing.distributions.forEach(distribution => {
+      adminUser.addToPolicy(new PolicyStatement({
+        actions: [
+          'cloudfront:CreateInvalidation',
+        ],
+        resources: [this.formatArn({
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+          service: 'cloudfront',
+          resource: 'distribution',
+          resourceName: distribution.distributionId,
+          region: '' // cloudfront has no region!
+        })],
+      }));
+    })
+
+    // Cloudformation read export values (i.e. bucket name, distribution id)
+    adminUser.addToPolicy(new PolicyStatement({
       actions: [
         'cloudformation:DescribeStacks',
       ],
